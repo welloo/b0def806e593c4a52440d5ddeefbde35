@@ -1,0 +1,105 @@
+using System;
+using System.Linq;
+using UnityEngine;
+using UnityEngine.Events;
+
+[RequireComponent(typeof(Collider2D))]
+public class CollisionDetector : MonoBehaviour, IColisingDetecter
+{
+    private Vector3 _origin, _startPoint;
+    private int _iterator;
+    private float _distanceBetweenRays = 0;
+    private Collider2D _baseCollider2D = null;
+    private Type _senderType = null;
+    private UnityEvent<IDamagebleObject> _unityEvent = new UnityEvent<IDamagebleObject>();
+    private IColisingDetecter.RayDirection _direction;
+    private GameObject _owner;
+
+    public string[] TargetTags { get; private set; }
+    public int _raysCount = 0;
+    public float _directionFactor, _marginX = 0;
+
+    public Type SenderType { get => _senderType; }
+    public UnityEvent<IDamagebleObject> OnDetectedEvent { get => _unityEvent; }
+    public GameObject Owner { get => _owner; }
+    public bool IsActive { get; private set; }
+    public IColisingDetecter.RayDirection rayDirection { get => _direction; }
+
+    #region Unity Methods
+    private void Update()
+    {
+        DetectCollision();
+    }
+    #endregion
+
+    #region Private Methods
+    private bool IsColliding()
+    {
+        _origin = _startPoint;
+        _distanceBetweenRays = (_baseCollider2D.bounds.size.x - 2 * _marginX) / (_raysCount - 1);
+        Vector3 tempDirecrion = _direction switch
+        {
+            IColisingDetecter.RayDirection.FORWARD => transform.TransformDirection(Vector3.up),
+            IColisingDetecter.RayDirection.UP => Vector3.up,
+            IColisingDetecter.RayDirection.DOWN => Vector3.down,
+            _ => Vector3.zero
+        };
+
+        for (_iterator = 0; _iterator < _raysCount; _iterator++)
+        {
+            var hit = Physics2D.Raycast(_origin, tempDirecrion * _directionFactor);
+            Debug.DrawRay(_origin, tempDirecrion * _directionFactor, Color.yellow);
+            if (
+                hit.collider &&
+                hit.transform &&
+                hit.transform.gameObject != Owner &&
+                hit.transform.gameObject != gameObject &&
+                !string.IsNullOrEmpty( TargetTags.SingleOrDefault(tag => tag == hit.transform.tag))
+                )
+            {
+                if (hit.transform.gameObject.TryGetComponent<IDamagebleObject>(out var result))
+                {
+                    //Debug.Log($"From {gameObject.name} to { hit.transform.name }");
+                    result.OnColisionAction(_senderType);
+                    return true;
+                }
+            }
+            _origin += new Vector3(_distanceBetweenRays, 0, 0);
+        }
+        return false;
+    }
+
+
+    #endregion
+
+    #region Public Methods
+    public bool Activate(Type senderType, GameObject owner, string[] targetTags ,IColisingDetecter.RayDirection direction)
+    {
+        if (!TryGetComponent(out _baseCollider2D))
+        {
+            Debug.LogError("Collider not found.");
+            return false;
+        }
+        _senderType = senderType;
+        TargetTags = targetTags;
+        _direction = direction;
+        _owner = owner;
+        //OnDetectedEvent.AddListener();
+        return IsActive = true;
+    }
+
+    public void DetectCollision()
+    {
+        if (IsActive)
+        {
+            _startPoint = new Vector3(_baseCollider2D.bounds.min.x + _marginX, transform.position.y, transform.position.z);
+            if (IsColliding())
+            {
+                () => IsActive = false
+                OnDetectedEvent?.Invoke();
+            }
+        }
+    }
+    #endregion
+
+}
